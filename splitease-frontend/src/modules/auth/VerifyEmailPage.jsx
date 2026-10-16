@@ -6,20 +6,19 @@ import { expiresIn, formatClock, maskEmail, resendIn, useNow } from "./verificat
 const CODE_LENGTH = 6;
 
 /**
- * The sign-up gate. Creating an account only gets you this far: the account
- * exists and a 6-digit code is in the mailbox, but nothing else in the app opens
- * until the code is entered. The login screen routes an unverified account here
- * too, and so does ProtectedRoute, so this page is the only door forward.
+ * The sign-up gate, and the door for anyone whose address is not confirmed yet.
  *
- * The session (JWT) is what makes verify and resend possible at all - the
- * backend takes the address from the token rather than the body, so nobody can
- * confirm somebody else's mailbox. Nothing here mirrors the server's mail pause
- * (5 wrong codes or passwords stop all mail to the account for 3 days): the
- * refusal arrives as a 400 whose message is shown below, so the rule lives in
- * exactly one place - OtpServiceImpl.
+ * There is deliberately no session required here: an account becomes usable only when
+ * the code mailed to it is entered, so this page has to work for a brand-new sign-up
+ * and for a login attempt the server refused as unverified. The address travels with
+ * the code (POST /otp/verify) - it is public because the code itself is the proof.
+ *
+ * Nothing here mirrors the server's pause (3 wrong codes or passwords stop all mail to
+ * the account for 15 minutes): the refusal arrives as a 400 whose message is shown
+ * below, so the rule lives in exactly one place - OtpServiceImpl.
  */
 export default function VerifyEmailPage() {
-  const { user, isAuthenticated, verification, verifyEmail, resendVerification, logout } = useAuth();
+  const { user, isAuthenticated, verification, pendingEmail, verifyEmail, resendVerification, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [code, setCode] = useState("");
@@ -28,18 +27,21 @@ export default function VerifyEmailPage() {
   const [busy, setBusy] = useState(false);
   const now = useNow();
 
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (user?.emailVerified) return <Navigate to="/groups" replace />;
+  // Where the code would go: the signed-in account's address, or the one we remembered
+  // from a sign-up / refused login. With neither there is nothing to confirm.
+  const email = user?.email || pendingEmail || "";
 
-  const address = verification?.maskedEmail || maskEmail(user?.email);
+  if (isAuthenticated && user?.emailVerified) return <Navigate to="/groups" replace />;
+  if (!email) return <Navigate to="/login" replace />;
+
+  const address = verification?.maskedEmail || maskEmail(email);
   const emailChanged = Boolean(location.state?.emailChanged);
   const secondsLeft = expiresIn(verification, now);
   const cooldownLeft = resendIn(verification, now);
   const expired = secondsLeft === 0;
 
   // Three states deserve different words: a code is out (register or resend), the
-  // address just changed, or a session arrived with no code attached (a plain login
-  // of an account that never finished sign-up, or a reload after logging out).
+  // address just changed, or we simply have an address to send to.
   const lead = !verification ? (
     emailChanged ? (
       <>
@@ -62,7 +64,7 @@ export default function VerifyEmailPage() {
     setNotice("");
     setBusy(true);
     try {
-      await verifyEmail(code); // flips user.emailVerified, so the guard above moves us on
+      await verifyEmail({ email, code }); // verifies the mailbox and returns a session
       navigate("/groups", { replace: true });
     } catch (err) {
       setError(err.message);
@@ -76,7 +78,7 @@ export default function VerifyEmailPage() {
     setNotice("");
     setBusy(true);
     try {
-      const issued = await resendVerification();
+      const issued = await resendVerification(email);
       setCode("");
       setNotice(`A new code is on its way to ${issued.maskedEmail}. It expires in 5 minutes.`);
     } catch (err) {
@@ -84,6 +86,12 @@ export default function VerifyEmailPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleSwitchAccount(event) {
+    event.preventDefault();
+    logout();
+    navigate("/login", { replace: true });
   }
 
   return (
@@ -104,23 +112,6 @@ export default function VerifyEmailPage() {
             </>
           )}
         </p>
-
-        {verification?.devCode && (
-          <p className="verify-hint">
-            {verification.emailDelivered ? (
-              <>
-                The code was emailed and, because <code>app.otp.expose-code</code> is on, it is here too:{" "}
-                <b>{verification.devCode}</b>.
-              </>
-            ) : (
-              <>
-                Nothing left this machine (no mailbox configured, or delivery failed), so here is the code:{" "}
-                <b>{verification.devCode}</b> — it is also in the backend log. Set <code>spring.mail.username</code> to
-                send real email.
-              </>
-            )}
-          </p>
-        )}
 
         {expired && <p className="error-text">That code expired. Request a new one.</p>}
 
@@ -149,7 +140,7 @@ export default function VerifyEmailPage() {
 
         <p className="switch">
           Wrong account?{" "}
-          <Link to="/login" onClick={logout}>
+          <Link to="/login" onClick={handleSwitchAccount}>
             Log in with another account
           </Link>
         </p>

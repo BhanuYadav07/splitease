@@ -29,26 +29,24 @@ public class User extends BaseEntity {
     private String passwordHash;
 
     /**
-     * False until the user types the 6-digit code that was emailed at sign-up.
-     * The account is usable while unverified (see OtpService) - being asked again
-     * on the next login is the nudge.
+     * False until the user types the 6-digit code emailed at sign-up (and again after
+     * any change of address). Only a verified account is allowed to log in or to reach
+     * protected endpoints.
      */
     @Column(nullable = false)
     private boolean emailVerified = false;
 
     /**
-     * Wrong guesses - a bad verification code or a bad password - since the last
-     * success. At {@code app.otp.max-attempts} (5) the account is put in the mail
-     * pause below. Kept on the account, not on the code, because the budget has to
-     * outlive any single code an attacker could otherwise just ask to be replaced.
+     * Wrong guesses - a bad code or a bad password - since the last success. At
+     * {@code app.otp.max-attempts} (3) the account enters the pause below.
      */
     @Column(nullable = false)
     private int failedAttempts = 0;
 
     /**
-     * Set when the guess budget runs out: no mail is sent to this address until
-     * then ({@code app.otp.mail-lock-days}, 3 days). Null, or a past timestamp,
-     * means the account is not paused.
+     * Set when the guess budget runs out: no mail is sent to this address and no login
+     * is accepted until then ({@code app.otp.mail-lock-minutes}, 15). Null, or a past
+     * timestamp, means the account is not paused.
      */
     @Column
     private LocalDateTime mailBlockedUntil;

@@ -43,15 +43,15 @@ public class AuthDtos {
             @Size(min = 8, message = "Password must be at least 8 characters") String newPassword
     ) {}
 
+    /** The signed-in shape returned by login, verify-email and reset-password. */
     public record AuthResponse(String token, UserDtos.UserResponse user) {}
 
     /**
-     * Sign-up no longer stops at "account created": the same token shape as login
-     * is returned so the client can go straight to the dashboard, plus the payload
-     * describing the verification code that was just emailed.
+     * Sign-up stops at "account created, code on its way": there is no token here, so an
+     * unconfirmed account cannot reach anything but the verification step. The payload
+     * describes the code that was just emailed (masked address, expiry, resend cooldown).
      */
     public record RegisterResponse(
-            String token,
             UserDtos.UserResponse user,
             OtpDtos.OtpIssued verification
     ) {}

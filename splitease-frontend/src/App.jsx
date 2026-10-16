@@ -11,18 +11,19 @@ import GroupDetailPage from "./modules/group/GroupDetailPage";
 import AppShell from "./layout/AppShell";
 
 /**
- * Where a signed-in visitor belongs. An account that has not confirmed its email
- * yet only opens the verification step - sign-up is a gate, not a banner on top
- * of the dashboard, so finding the dashboard takes a correct 6-digit code.
+ * Where a visitor belongs. An account that has not confirmed its email yet only
+ * opens the verification step - sign-up is a gate, not a banner on top of the
+ * dashboard, so finding the dashboard takes a correct 6-digit code. A visitor who
+ * is mid-confirmation (no session yet, but an address waiting) goes back there too.
  */
-function homePath(isAuthenticated, user) {
-  if (!isAuthenticated) return "/login";
+function homePath(isAuthenticated, user, pendingEmail) {
+  if (!isAuthenticated) return pendingEmail ? "/verify-email" : "/login";
   return user?.emailVerified ? "/groups" : "/verify-email";
 }
 
 export default function App() {
-  const { isAuthenticated, user } = useAuth();
-  const home = homePath(isAuthenticated, user);
+  const { isAuthenticated, user, pendingEmail } = useAuth();
+  const home = homePath(isAuthenticated, user, pendingEmail);
 
   return (
     <Routes>

@@ -14,11 +14,15 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const data = await login(form);
-      // An account that never finished sign-up goes back to the confirmation
-      // step - the dashboard would only bounce it there anyway.
-      navigate(data?.user?.emailVerified ? "/groups" : "/verify-email");
+      await login(form);
+      navigate("/groups");
     } catch (err) {
+      // Only a verified account can log in. An unfinished one is sent to the
+      // confirmation step, with its address remembered by the auth context.
+      if (err.code === "EMAIL_NOT_VERIFIED") {
+        navigate("/verify-email", { replace: true });
+        return;
+      }
       setError(err.message);
     } finally {
       setLoading(false);

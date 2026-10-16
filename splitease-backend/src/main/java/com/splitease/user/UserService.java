@@ -2,10 +2,12 @@ package com.splitease.user;
 
 import com.splitease.exception.ConflictException;
 import com.splitease.exception.ResourceNotFoundException;
+import com.splitease.otp.OtpServiceImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -13,6 +15,7 @@ import java.util.UUID;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final OtpServiceImpl otpService;
 
     public User getById(UUID userId) {
         return userRepository.findById(userId)
@@ -27,17 +30,28 @@ public class UserService {
     @Transactional
     public User updateProfile(UUID userId, UserDtos.UpdateProfileRequest request) {
         User user = getById(userId);
-        if (!user.getEmail().equalsIgnoreCase(request.email())
-                && userRepository.existsByEmail(request.email())) {
-            throw new ConflictException("Email already in use: " + request.email());
+        String email = request.email().trim().toLowerCase(Locale.ROOT);
+        boolean emailChanged = !user.getEmail().equalsIgnoreCase(email);
+
+        if (emailChanged && userRepository.existsByEmail(email)) {
+            throw new ConflictException("Email already in use: " + email);
         }
-        boolean emailChanged = !user.getEmail().equalsIgnoreCase(request.email());
-        user.setName(request.name());
-        user.setEmail(request.email());
+
+        user.setName(request.name().trim());
+        user.setEmail(email);
         if (emailChanged) {
-            // A new address is an unproven address: ask for a fresh 6-digit code.
+            // A new address is an unproven address: the account drops back to unverified,
+            // so the next request to a protected endpoint is refused until the code now
+            // on its way is entered.
             user.setEmailVerified(false);
         }
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+
+        if (emailChanged) {
+            // Send the confirmation code for the new address. Enumeration-safe helper, so
+            // a mail hiccup cannot fail the profile update itself.
+            otpService.resendVerification(email);
+        }
+        return saved;
     }
 }

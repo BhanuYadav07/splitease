@@ -1,5 +1,6 @@
 package com.splitease.security;
 
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -52,15 +53,37 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
-                        //.requestMatchers("/h2-console/**").permitAll()
-                        .anyRequest().authenticated()
+                        // Sign-up / login / password reset and the code that confirms an
+                        // address: reachable before there is any session to speak of.
+                        .requestMatchers("/api/auth/**", "/api/otp/**").permitAll()
+                        // Everything else - groups, expenses, balances, profile - needs a
+                        // *verified* account. An unconfirmed token carries ROLE_USER but not
+                        // VERIFIED, so it cannot touch any of this: email confirmation is
+                        // enforced by the server, not just by the router.
+                        .anyRequest().hasAuthority("VERIFIED")
                 )
-                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin())) // needed for h2-console
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) ->
+                                writeJson(response, HttpServletResponse.SC_UNAUTHORIZED,
+                                        "Authentication required.", request.getRequestURI()))
+                        .accessDeniedHandler((request, response, deniedException) ->
+                                writeJson(response, HttpServletResponse.SC_FORBIDDEN,
+                                        "Your email address must be verified to do that.", request.getRequestURI()))
+                )
+                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    private void writeJson(HttpServletResponse response, int status, String message, String path) throws java.io.IOException {
+        response.setStatus(status);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"status\":" + status
+                + ",\"error\":\"" + (status == 401 ? "Unauthorized" : "Forbidden") + "\""
+                + ",\"message\":\"" + message + "\""
+                + ",\"path\":\"" + path + "\"}");
     }
 
     @Bean

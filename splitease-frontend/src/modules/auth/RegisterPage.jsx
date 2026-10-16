@@ -14,7 +14,7 @@ export default function RegisterPage() {
     setError("");
     setLoading(true);
     try {
-      // The account exists and the code is on its way, but the app stays shut:
+      // The account exists and the code is on its way, but no session is created:
       // the confirmation step is the next (and only) page from here.
       await register(form);
       navigate("/verify-email", { replace: true });

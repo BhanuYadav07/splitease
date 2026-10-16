@@ -2,11 +2,12 @@ package com.splitease.user;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import lombok.Builder;
 
 import java.util.UUID;
 
 public class UserDtos {
-
+    @Builder
     public record UserResponse(UUID id, String name, String email, boolean emailVerified) {
         public static UserResponse from(User u) {
             return new UserResponse(u.getId(), u.getName(), u.getEmail(), u.isEmailVerified());

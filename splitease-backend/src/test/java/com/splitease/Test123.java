@@ -1,5 +1,6 @@
 package com.splitease;
 
+import com.splitease.otp.OtpServiceImpl;
 import com.splitease.user.User;
 import com.splitease.user.UserRepository;
 import jakarta.transaction.Transactional;
@@ -64,5 +65,11 @@ public class Test123 {
         for(User user:userRepository.findAll()){
             System.out.println(user);
         }
+    }
+    @Autowired
+    OtpServiceImpl otpService;
+    @Test
+    void Test1235(){
+        otpService.sendOtp("ty381603@gmail.com");
     }
 }

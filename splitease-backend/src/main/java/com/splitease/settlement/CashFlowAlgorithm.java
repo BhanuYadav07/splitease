@@ -8,15 +8,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 
-/**
- * Cash-flow / debt-simplification algorithm (functional requirement 8).
- *
- * Given each member's net balance, greedily matches the largest creditor
- * against the largest debtor using two max-heaps, settling the smaller of
- * the two amounts each round. This minimizes the number of payment
- * transactions needed to settle a group ("A owes B, B owes C" collapses to
- * "A owes C" whenever the amounts allow it).
- */
 public class CashFlowAlgorithm {
 
     private static final BigDecimal EPSILON = new BigDecimal("0.01");

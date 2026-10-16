@@ -45,6 +45,17 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.UNAUTHORIZED, ex.getMessage(), req);
     }
 
+    /**
+     * Right password, unconfirmed address: 403 with {@code EMAIL_NOT_VERIFIED} so the
+     * client can send the user to the confirmation step instead of showing a dead end.
+     */
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ResponseEntity<ApiError> handleEmailNotVerified(EmailNotVerifiedException ex, HttpServletRequest req) {
+        ApiError error = ApiError.of(HttpStatus.FORBIDDEN.value(), HttpStatus.FORBIDDEN.getReasonPhrase(),
+                "EMAIL_NOT_VERIFIED", ex.getMessage(), req.getRequestURI());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
+    }
+
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ApiError> handleOptimisticLock(OptimisticLockingFailureException ex, HttpServletRequest req) {
         return build(HttpStatus.CONFLICT,

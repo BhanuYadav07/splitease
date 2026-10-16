@@ -15,8 +15,9 @@ public class AuthController {
     private final AuthService authService;
 
     /**
-     * 201 with {token, user, verification}: the account exists, the user is signed
-     * in already, and a 5-minute code is on its way to the given address.
+     * 201 with {user, verification}: the account exists and a 5-minute code is on its
+     * way, but there is no token - sign-up does not log anyone in. The session comes
+     * from {@code /api/otp/verify} once the code is accepted.
      */
     @PostMapping("/register")
     public ResponseEntity<AuthDtos.RegisterResponse> register(@Valid @RequestBody AuthDtos.RegisterRequest request) {
@@ -25,6 +26,11 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+    /**
+     * 200 with {token, user} for a confirmed account. An unverified one is refused with
+     * 403 EMAIL_NOT_VERIFIED (and a fresh code is sent); too many wrong passwords pause
+     * the account and answer 401 with the wait.
+     */
     @PostMapping("/login")
     public AuthDtos.AuthResponse login(@Valid @RequestBody AuthDtos.LoginRequest request) {
         return authService.login(request);

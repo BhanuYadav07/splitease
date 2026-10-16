@@ -25,8 +25,16 @@ public class AuthenticatedUser implements UserDetails {
         return user;
     }
 
+    /**
+     * A confirmed account carries {@code VERIFIED}; everything but the auth/otp
+     * endpoints demands it (see SecurityConfig), so an unverified token - the one a
+     * user keeps after changing their address, for instance - is read-only to the app.
+     */
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
+        if (user.isEmailVerified()) {
+            return List.of(new SimpleGrantedAuthority("ROLE_USER"), new SimpleGrantedAuthority("VERIFIED"));
+        }
         return List.of(new SimpleGrantedAuthority("ROLE_USER"));
     }
 

@@ -27,7 +27,12 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
   const data = isJson ? await res.json().catch(() => null) : null;
   if (!res.ok) {
     const message = data?.message || data?.error || `Request failed (${res.status})`;
-    throw new Error(message);
+    const error = new Error(message);
+    // The status and the machine-readable code let a page branch on *why* it failed
+    // (e.g. EMAIL_NOT_VERIFIED -> go to the confirmation step) rather than only print it.
+    error.status = res.status;
+    error.code = data?.code;
+    throw error;
   }
   return data;
 }

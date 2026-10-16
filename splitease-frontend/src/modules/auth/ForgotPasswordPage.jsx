@@ -114,13 +114,6 @@ export default function ForgotPasswordPage() {
               )}
             </p>
 
-            {issued?.devCode && (
-              <p className="verify-hint">
-                While <code>app.otp.expose-code</code> is on, the code is returned here too: <b>{issued.devCode}</b> — it
-                is also in the backend log.
-              </p>
-            )}
-
             {expired && <p className="error-text">That code expired. Request a new one.</p>}
 
             <form className="verify-form" onSubmit={handleReset}>
