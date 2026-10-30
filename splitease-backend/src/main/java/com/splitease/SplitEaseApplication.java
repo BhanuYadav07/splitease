@@ -9,4 +9,3 @@ public class SplitEaseApplication {
         SpringApplication.run(SplitEaseApplication.class, args);
     }
 }
-  

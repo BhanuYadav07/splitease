@@ -7,9 +7,10 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.MailException;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,7 +48,6 @@ public class OtpServiceImpl {
 
     private final OtpRepository otpRepository;
     private final UserRepository userRepository;
-    private final JavaMailSender mailSender;
     private final SecureRandom random = new SecureRandom();
 
     @Value("${app.otp.expiry-minutes:5}")
@@ -65,16 +65,13 @@ public class OtpServiceImpl {
     @Value("${app.otp.resend-cooldown-seconds:60}")
     private long resendCooldownSeconds;
 
-    @Value("${spring.mail.username:}")
-    private String fromEmail;
+    @Value("${brevo.api-key}")
+    private String brevoApiKey;
 
+    @Value("${brevo.from}")
+    private String fromEmail;
     // ---------------------------------------------------------------- send
 
-    /**
-     * Issues a code for an account that is known to exist (register, and the
-     * authenticated resend). A failure to reach the mailbox surfaces as a 400 so
-     * sign-up does not silently leave an account nobody can confirm.
-     */
     @Transactional
     public OtpDtos.OtpIssued sendOtp(String rawEmail) {
         String email = normalize(rawEmail);
@@ -84,11 +81,7 @@ public class OtpServiceImpl {
         return issueFor(user, true);
     }
 
-    /**
-     * Enumeration-safe resend: the answer is identical whether or not the address has
-     * an account, whether or not it is paused, and whether or not the mail went out.
-     * Only an account that exists and is not paused actually receives a new code.
-     */
+
     @Transactional
     public OtpDtos.OtpIssued resendVerification(String rawEmail) {
         String email = normalize(rawEmail);
@@ -117,12 +110,6 @@ public class OtpServiceImpl {
                 issued.resendAvailableInSeconds(), issued.attemptsLeft());
     }
 
-    /**
-     * Shared issue path. Within the resend cooldown the live code is described again
-     * instead of a new one being sent, so hammering "resend" cannot be turned into a
-     * mail flood. A wrong or expired code still spends one of the account's guesses -
-     * see {@link #verifyOtp}.
-     */
     private OtpDtos.OtpIssued issueFor(User user, boolean strictMail) {
         String email = normalize(user.getEmail());
         LocalDateTime now = LocalDateTime.now();
@@ -144,12 +131,14 @@ public class OtpServiceImpl {
 
         try {
             sendEmail(email, otp.getCode());
-        } catch (MailException e) {
-            log.error("Failed to send verification email to {}: {}", email, e.getMessage());
+        } catch (RestClientException | IllegalStateException e) {
+
+            log.error("Brevo email sending failed for: {}", email, e);
+
             if (strictMail) {
-                // Rolls back the caller's transaction (sign-up keeps the account only
-                // if a code actually went out).
-                throw new InvalidRequestException("Failed to send verification email. Please try again.");
+                throw new InvalidRequestException(
+                        "Failed to send verification email. Please try again."
+                );
             }
         }
         return payload(user, otp, now);
@@ -157,12 +146,6 @@ public class OtpServiceImpl {
 
     // -------------------------------------------------------------- verify
 
-    /**
-     * The sign-up / resend confirmation. A correct code verifies the mailbox and clears
-     * the guess budget; a wrong one spends a guess and, at the limit, starts the pause.
-     * {@code noRollbackFor} lets that spent guess commit even though the method ends by
-     * throwing.
-     */
     @Transactional(noRollbackFor = InvalidRequestException.class)
     public User verifyOtp(String rawEmail, String code) {
         String email = normalize(rawEmail);
@@ -191,11 +174,6 @@ public class OtpServiceImpl {
                 "Invalid or expired verification code. " + left + " attempt(s) left.");
     }
 
-    /**
-     * The password-reset confirmation. Verifies and *spends* the code, but leaves the
-     * account's verified flag to the caller (the reset marks it verified too). A wrong
-     * code costs a guess even when the address turns out to be nobody's.
-     */
     @Transactional(noRollbackFor = InvalidRequestException.class)
     public void consumeCode(String rawEmail, String code) {
         String email = normalize(rawEmail);
@@ -306,19 +284,39 @@ public class OtpServiceImpl {
     }
 
     private void sendEmail(String to, String code) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        // spring.mail.username may still hold the {Google_GMAIL} placeholder; only
-        // echo it as the sender when it actually looks like an address.
-        if (fromEmail != null && fromEmail.contains("@")) {
-            message.setFrom(fromEmail);
+
+        if (brevoApiKey == null || brevoApiKey.isBlank()) {
+            throw new IllegalStateException("Brevo API key is not configured.");
         }
-        message.setTo(to);
-        message.setSubject("SplitEase verification code");
-        message.setText("Welcome to SplitEase!\n\n"
-                + "Your verification code is: " + code + "\n\n"
-                + "It expires in " + expiryMinutes + " minute(s).\n\n"
-                + "If you did not ask for this code you can ignore this email.");
-        mailSender.send(message);
+
+        if (fromEmail == null || fromEmail.isBlank() || !fromEmail.contains("@")) {
+            throw new IllegalStateException("Brevo sender email is not configured.");
+        }
+
+        Map<String, Object> requestBody = Map.of(
+                "sender", Map.of(
+                        "name", "SplitEase",
+                        "email", fromEmail
+                ),
+                "to", List.of(
+                        Map.of("email", to)
+                ),
+                "subject", "SplitEase verification code",
+                "textContent",
+                "Welcome to SplitEase!\n\n"
+                        + "Your verification code is: " + code + "\n\n"
+                        + "It expires in " + expiryMinutes + " minute(s).\n\n"
+                        + "If you did not ask for this code you can ignore this email."
+        );
+
+        RestClient.create("https://api.brevo.com")
+                .post()
+                .uri("/v3/smtp/email")
+                .header("api-key", brevoApiKey)
+                .header("Content-Type", "application/json")
+                .body(requestBody)
+                .retrieve()
+                .toBodilessEntity();
     }
 
     private String generateCode() {
